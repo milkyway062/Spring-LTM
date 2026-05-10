@@ -1,0 +1,25 @@
+[
+  {
+    "type": "key",
+    "key": "i",
+    "duration": 2.0
+  },
+  {
+    "type": "delay",
+    "seconds": 0.5
+  },
+  {
+    "type": "mouse",
+    "dx": 4500,
+    "dy": -1000
+  },
+  {
+    "type": "delay",
+    "seconds": 0.5
+  },
+  {
+    "type": "key",
+    "key": "o",
+    "duration": 2.0
+  }
+]
