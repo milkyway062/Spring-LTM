@@ -22,6 +22,14 @@ from AnimeVangaurdsLibrary.tools.av_game import start, read_wave, restart_match
 from AnimeVangaurdsLibrary.tools.av_unit import place_unit
 
 from position_setup import setup_position
+import macro_state
+
+
+def _tracked_wave() -> int:
+    val = read_wave()
+    if val >= 1:
+        macro_state.state["last_wave_seen"] = time.time()
+    return val
 
 NINJUTSU_SELL_NO  = (466, 369)
 NINJUTSU_SELL_YES = (355, 370)
@@ -49,6 +57,7 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     def stopped() -> bool:
         return stop_event is not None and stop_event.is_set()
 
+    macro_state.state["last_wave_seen"] = time.time()
     setup_position(log_cb=log_cb)
     if stopped(): return
 
@@ -119,13 +128,13 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
 
     log_cb("Loop: waiting for wave 5...")
     while not stopped():
-        if read_wave() >= 5 and read_wave() >= 5:
+        if _tracked_wave() >= 5 and _tracked_wave() >= 5:
             break
         time.sleep(0.3)
     if stopped(): return
 
     log_cb("Loop: waiting for wave 20...")
-    while not stopped() and read_wave() < 20:
+    while not stopped() and _tracked_wave() < 20:
         while not stopped() and not r_util.imageExists(_PLACEMENT_IMG, 0.8, region=_PLACEMENT_REGION):
             r_input.Click(282, 240, 0.1)
         if stopped(): return

@@ -77,7 +77,8 @@ FONT_TITLE = ("Segoe UI Semibold", 12)
 FONT_STAT  = ("Segoe UI Semibold", 22)
 FONT_MONO  = ("Consolas",           9)
 
-WIN_W = 460
+WIN_W        = 460
+_STUCK_TIMEOUT = 180  # seconds without a valid wave before force rejoin
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -396,6 +397,24 @@ class MacroGUI:
                 pass
             time.sleep(2)
 
+    def _stuck_watcher(self):
+        while not self._stop_event.is_set() and macro_state.state.get("running"):
+            time.sleep(10)
+            if self._stop_event.is_set() or not macro_state.state.get("running"):
+                break
+            last = macro_state.state.get("last_wave_seen", 0.0)
+            if last > 0 and time.time() - last > _STUCK_TIMEOUT:
+                self._log("Stuck: no wave for 3 min — force rejoining")
+                self._set_phase("Stuck — force rejoin…")
+                self._set_status("stuck", _DOT_ERR)
+                macro_state._stuck_event.set()
+                if self._thread and self._thread.is_alive():
+                    ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                        ctypes.c_ulong(self._thread.ident),
+                        ctypes.py_object(SystemExit),
+                    )
+                return
+
     # ── worker ─────────────────────────────────────────────────
 
     def _worker(self):
@@ -405,11 +424,21 @@ class MacroGUI:
             "total_runs":       macro_state.state.get("total_runs", 0),
             "runs_since_rejoin": macro_state.state.get("runs_since_rejoin", 0),
             "running":          True,
+            "last_wave_seen":   time.time(),
         })
 
         threading.Thread(target=self._disconnect_watcher, daemon=True).start()
+        threading.Thread(target=self._stuck_watcher,      daemon=True).start()
 
         try:
+            if macro_state._stuck_event.is_set():
+                macro_state._stuck_event.clear()
+                self._log("Stuck watchdog: force rejoining Roblox…")
+                self._set_phase("Force rejoin…")
+                ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                if not ok or self._stop_event.is_set():
+                    return
+
             if is_in_lobby():
                 self._log("Lobby detected — pathing to Spring LTM")
                 self._set_phase("Lobby pathing…")
@@ -457,7 +486,9 @@ class MacroGUI:
             self.root.after(0, lambda: self._set_phase(f"Error: {exc}"))
         finally:
             macro_state.state["running"] = False
-            if macro_state._disconnect_event.is_set() and not self._stop_event.is_set():
+            if macro_state._stuck_event.is_set() and not self._stop_event.is_set():
+                self.root.after(0, self._on_stuck_restart)
+            elif macro_state._disconnect_event.is_set() and not self._stop_event.is_set():
                 self.root.after(0, self._on_disconnect_restart)
             else:
                 self.root.after(0, self._on_run_complete)
@@ -471,6 +502,12 @@ class MacroGUI:
     def _on_disconnect_restart(self):
         self._log("Restarting after disconnect…")
         self._set_status("reconnecting…", _DOT_STOP)
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _on_stuck_restart(self):
+        self._log("Restarting after stuck detection…")
+        self._set_status("rejoining…", _DOT_STOP)
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 

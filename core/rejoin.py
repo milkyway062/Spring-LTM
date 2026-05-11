@@ -15,11 +15,27 @@ for _p in (
         sys.path.insert(0, _p)
 
 import macro_state
+from rblib.r_client import focus_roblox_window
 
 logger = logging.getLogger(__name__)
 
+_PLACE_ID              = 16146832113
 _ROBLOX_LAUNCH_TIMEOUT = 120
 _LOBBY_WAIT_TIMEOUT    = 180
+
+
+def _get_roblox_exe() -> str | None:
+    try:
+        import psutil
+        for proc in psutil.process_iter(["name", "exe"]):
+            try:
+                if "robloxplayerbeta" in proc.name().lower():
+                    return proc.exe()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except ImportError:
+        logger.warning("psutil not installed")
+    return None
 
 
 def _kill_roblox() -> None:
@@ -32,7 +48,7 @@ def _kill_roblox() -> None:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     except ImportError:
-        logger.warning("psutil not installed — cannot kill Roblox processes")
+        pass
 
 
 def _roblox_running() -> bool:
@@ -49,17 +65,30 @@ def _roblox_running() -> bool:
     return False
 
 
+def _extract_link_code(value: str) -> str:
+    from urllib.parse import urlparse, parse_qs
+    qs = parse_qs(urlparse(value).query)
+    if "privateServerLinkCode" in qs:
+        return qs["privateServerLinkCode"][0]
+    return value
+
+
 def do_rejoin(
     stop_event: threading.Event | None = None,
     log_cb=print,
 ) -> bool:
-    """Kill Roblox, relaunch via the private server URL, wait for lobby."""
+    """Kill Roblox, relaunch directly into the private server, wait for lobby."""
     def stopped() -> bool:
         return stop_event is not None and stop_event.is_set()
 
     ps_code = macro_state.PRIVATE_SERVER_CODE.strip()
     if not ps_code:
         log_cb("Rejoin: no private server URL configured — skipping")
+        return False
+
+    roblox_exe = _get_roblox_exe()
+    if not roblox_exe:
+        log_cb("Rejoin: RobloxPlayerBeta.exe not found — cannot rejoin")
         return False
 
     log_cb("Rejoin: killing Roblox…")
@@ -69,9 +98,11 @@ def do_rejoin(
             return False
         time.sleep(0.1)
 
-    log_cb("Rejoin: launching private server…")
+    link_code  = _extract_link_code(ps_code)
+    rejoin_url = f"roblox://placeId={_PLACE_ID}&linkCode={link_code}/"
+    log_cb(f"Rejoin: launching {rejoin_url[:60]}…")
     try:
-        subprocess.Popen(["start", "", ps_code], shell=True)
+        subprocess.Popen([roblox_exe, rejoin_url])
     except Exception as exc:
         log_cb(f"Rejoin: launch failed — {exc}")
         return False
@@ -87,6 +118,13 @@ def do_rejoin(
     else:
         log_cb("Rejoin: timed out waiting for Roblox to launch")
         return False
+
+    log_cb("Rejoin: aligning Roblox window…")
+    time.sleep(2)
+    try:
+        focus_roblox_window()
+    except Exception:
+        pass
 
     log_cb("Rejoin: waiting for lobby to load…")
     deadline = time.time() + _LOBBY_WAIT_TIMEOUT
@@ -106,12 +144,6 @@ def do_rejoin(
     try:
         import position_setup
         position_setup._first_run = True
-    except Exception:
-        pass
-
-    try:
-        from rblib.r_client import focus_roblox_window
-        focus_roblox_window()
     except Exception:
         pass
 
