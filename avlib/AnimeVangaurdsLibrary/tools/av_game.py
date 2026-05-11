@@ -863,12 +863,13 @@ def read_wave() -> int:
         region[2] + rx,
         region[3] + ry,
     ))
-    img = cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_LINEAR)
+    img = cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+    binary = cv2.copyMakeBorder(binary, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
     text = pytesseract.image_to_string(
         binary,
-        config="--psm 8 -c tessedit_char_whitelist=0123456789",
+        config="--psm 7 -c tessedit_char_whitelist=0123456789",
     ).strip()
     try:
         val = int(text)

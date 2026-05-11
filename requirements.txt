@@ -4,3 +4,4 @@ keyboard
 pytesseract
 requests
 pillow
+psutil

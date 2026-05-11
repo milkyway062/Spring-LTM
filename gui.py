@@ -25,6 +25,7 @@ import macro_state
 import webhook
 from main_loop import run
 from lobby_path import do_lobby_path, is_in_lobby
+from rejoin import do_rejoin
 from rblib.r_client import focus_roblox_window
 
 _CONFIG_PATH = os.path.join(_HERE, "config.json")
@@ -234,10 +235,18 @@ class MacroGUI:
 
         self._runs_var = tk.StringVar(value="0")
         blk = tk.Frame(nums, bg=CARD)
-        blk.pack(side="left")
+        blk.pack(side="left", padx=(0, 24))
         tk.Label(blk, textvariable=self._runs_var, bg=CARD, fg=FG,
                  font=FONT_STAT).pack(anchor="w")
         tk.Label(blk, text="RUNS", bg=CARD, fg=FG_DIM,
+                 font=("Segoe UI", 7)).pack(anchor="w")
+
+        self._since_rejoin_var = tk.StringVar(value="0")
+        blk2 = tk.Frame(nums, bg=CARD)
+        blk2.pack(side="left")
+        tk.Label(blk2, textvariable=self._since_rejoin_var, bg=CARD, fg=FG,
+                 font=FONT_STAT).pack(anchor="w")
+        tk.Label(blk2, text="SINCE REJOIN", bg=CARD, fg=FG_DIM,
                  font=("Segoe UI", 7)).pack(anchor="w")
 
         self._sep(inner)
@@ -265,6 +274,16 @@ class MacroGUI:
         inner = self._section("CONFIG")
 
         row = self._row(inner, pady=(12, 4))
+        self._field_label(row, "Rejoin every")
+        self._rejoin_var = tk.StringVar(value=str(self._cfg.get("auto_rejoin_runs", 0)))
+        self._rejoin_entry = self._entry(row, self._rejoin_var, width=5)
+        self._rejoin_entry.pack(side="left", padx=(0, 6))
+        self._rejoin_entry.bind("<FocusOut>", lambda _: self._apply_rejoin())
+        self._rejoin_entry.bind("<Return>",   lambda _: self._apply_rejoin())
+        tk.Label(row, text="runs  (0 = off)", bg=CARD, fg=FG_MID,
+                 font=FONT_LABEL).pack(side="left")
+
+        row = self._row(inner, pady=(4, 4))
         self._field_label(row, "Private Server")
         self._ps_var = tk.StringVar(value=self._cfg.get("private_server", ""))
         self._entry(row, self._ps_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
@@ -300,6 +319,15 @@ class MacroGUI:
                        activebackground=BG, activeforeground=FG,
                        font=FONT_SMALL, bd=0, cursor="hand2").pack(side="left")
 
+        self._update_btn = self._btn(
+            foot, "Check for Updates", self._on_update,
+            SURFACE, BORDER2, font=FONT_SMALL,
+        )
+        self._update_btn.config(highlightthickness=1,
+                                highlightbackground=BORDER2,
+                                highlightcolor=AMBER)
+        self._update_btn.pack(side="right")
+
         self._log_frame = tk.Frame(self.root, bg=SURFACE, bd=0)
         self._log_frame.pack(fill="x", padx=14, pady=(0, 10))
         self._log_frame.pack_forget()
@@ -318,25 +346,68 @@ class MacroGUI:
     # ── config persistence ─────────────────────────────────────
 
     def _apply_config(self):
-        macro_state.WEBHOOK_URL         = self._wh_var.get().strip()
-        macro_state.PRIVATE_SERVER_CODE = self._ps_var.get().strip()
+        macro_state.WEBHOOK_URL            = self._wh_var.get().strip()
+        macro_state.PRIVATE_SERVER_CODE    = self._ps_var.get().strip()
+        macro_state.AUTO_REJOIN_AFTER_RUNS = self._parse_rejoin()
 
     def _save_prefs(self):
-        macro_state.WEBHOOK_URL         = self._wh_var.get().strip()
-        macro_state.PRIVATE_SERVER_CODE = self._ps_var.get().strip()
+        macro_state.WEBHOOK_URL            = self._wh_var.get().strip()
+        macro_state.PRIVATE_SERVER_CODE    = self._ps_var.get().strip()
+        macro_state.AUTO_REJOIN_AFTER_RUNS = self._parse_rejoin()
         _save_config({
-            "private_server": self._ps_var.get().strip(),
-            "webhook_url":    self._wh_var.get().strip(),
+            "private_server":   self._ps_var.get().strip(),
+            "webhook_url":      self._wh_var.get().strip(),
+            "auto_rejoin_runs": self._rejoin_var.get().strip(),
         })
+
+    def _parse_rejoin(self) -> int:
+        try:
+            return max(0, int(self._rejoin_var.get()))
+        except ValueError:
+            return 0
+
+    def _apply_rejoin(self) -> None:
+        val = self._parse_rejoin()
+        self._rejoin_var.set(str(val))
+        macro_state.AUTO_REJOIN_AFTER_RUNS = val
+        self._save_prefs()
+
+    # ── disconnect watcher ─────────────────────────────────────
+
+    _DISCONNECT_IMG = os.path.join(_HERE, "Images", "Disconnected.png")
+
+    def _disconnect_watcher(self):
+        from rblib import r_util, r_input
+        while not self._stop_event.is_set() and macro_state.state.get("running"):
+            try:
+                if r_util.imageExists(self._DISCONNECT_IMG, 0.85):
+                    self._log("Disconnect detected — dismissing dialog")
+                    self._set_phase("Disconnected — reconnecting…")
+                    self._set_status("disconnected", _DOT_ERR)
+                    r_input.Click(408, 371, 0.3)
+                    macro_state._disconnect_event.set()
+                    if self._thread and self._thread.is_alive():
+                        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_ulong(self._thread.ident),
+                            ctypes.py_object(SystemExit),
+                        )
+                    return
+            except Exception:
+                pass
+            time.sleep(2)
 
     # ── worker ─────────────────────────────────────────────────
 
     def _worker(self):
+        macro_state._disconnect_event.clear()
         macro_state.state.update({
-            "session_start": time.time(),
-            "total_runs":    0,
-            "running":       True,
+            "session_start":    macro_state.state.get("session_start") or time.time(),
+            "total_runs":       macro_state.state.get("total_runs", 0),
+            "runs_since_rejoin": macro_state.state.get("runs_since_rejoin", 0),
+            "running":          True,
         })
+
+        threading.Thread(target=self._disconnect_watcher, daemon=True).start()
 
         try:
             if is_in_lobby():
@@ -355,15 +426,28 @@ class MacroGUI:
                     break
 
                 elapsed = time.time() - run_start
-                macro_state.state["total_runs"]     += 1
-                macro_state.state["total_run_time"] += elapsed
-                macro_state.state["last_run_time"]   = elapsed
+                macro_state.state["total_runs"]      += 1
+                macro_state.state["total_run_time"]  += elapsed
+                macro_state.state["last_run_time"]    = elapsed
+                macro_state.state["runs_since_rejoin"] += 1
 
                 threading.Thread(
                     target=webhook.send,
                     args=(elapsed,),
                     daemon=True,
                 ).start()
+
+                n = macro_state.AUTO_REJOIN_AFTER_RUNS
+                if n > 0 and macro_state.state["runs_since_rejoin"] >= n:
+                    self._log(f"Auto rejoin: {n} runs reached — restarting Roblox")
+                    self._set_phase("Auto rejoin…")
+                    macro_state.state["runs_since_rejoin"] = 0
+                    do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                    if self._stop_event.is_set():
+                        break
+                    if is_in_lobby():
+                        self._set_phase("Lobby pathing…")
+                        do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
 
             self._set_phase("Stopped")
 
@@ -373,13 +457,22 @@ class MacroGUI:
             self.root.after(0, lambda: self._set_phase(f"Error: {exc}"))
         finally:
             macro_state.state["running"] = False
-            self.root.after(0, self._on_run_complete)
+            if macro_state._disconnect_event.is_set() and not self._stop_event.is_set():
+                self.root.after(0, self._on_disconnect_restart)
+            else:
+                self.root.after(0, self._on_run_complete)
 
     def _on_run_complete(self):
         self._start_btn.config(state="normal")
         _hover(self._start_btn, GREEN_D, GREEN_A)
         self._stop_btn.config(state="disabled")
         self._set_status("idle", _DOT_IDLE)
+
+    def _on_disconnect_restart(self):
+        self._log("Restarting after disconnect…")
+        self._set_status("reconnecting…", _DOT_STOP)
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
 
     # ── actions ────────────────────────────────────────────────
 
@@ -442,6 +535,80 @@ class MacroGUI:
         except queue.Full:
             pass
 
+    def _on_update(self):
+        self._update_btn.config(state="disabled", text="Checking...")
+        self._set_status("Checking for updates…", _DOT_IDLE)
+        threading.Thread(target=self._run_update, daemon=True).start()
+
+    def _run_update(self):
+        import hashlib
+        import urllib.request
+
+        REPO       = "milkyway062/Spring-LTM"
+        BASE_API   = f"https://api.github.com/repos/{REPO}"
+        BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+        SKIP_FILES = {"config.json"}
+        SKIP_DIRS  = {"__pycache__", ".git", ".claude", "tesseract"}
+
+        def git_blob_sha(path):
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                return hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
+            except FileNotFoundError:
+                return None
+
+        def fetch(url):
+            req = urllib.request.Request(url, headers={"User-Agent": "SpringLTM-Updater"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.read()
+
+        def set_status(msg):
+            self.root.after(0, lambda m=msg: self._set_status(m, _DOT_IDLE))
+
+        try:
+            repo_info = json.loads(fetch(BASE_API))
+            branch    = repo_info.get("default_branch", "master")
+
+            set_status("Fetching file list…")
+            tree_data = json.loads(fetch(f"{BASE_API}/git/trees/{branch}?recursive=1"))
+
+            to_update = []
+            for item in tree_data.get("tree", []):
+                if item["type"] != "blob":
+                    continue
+                path  = item["path"]
+                parts = path.replace("\\", "/").split("/")
+                if any(p in SKIP_DIRS for p in parts[:-1]):
+                    continue
+                if parts[-1] in SKIP_FILES:
+                    continue
+                local_path = os.path.join(BASE_DIR, *parts)
+                if git_blob_sha(local_path) != item["sha"]:
+                    to_update.append((path, parts))
+
+            if not to_update:
+                set_status("Already up to date!")
+                self.root.after(3000, lambda: self._set_status("idle", _DOT_IDLE))
+                return
+
+            for i, (path, parts) in enumerate(to_update):
+                set_status(f"Updating {parts[-1]} ({i + 1}/{len(to_update)})…")
+                data       = fetch(f"https://raw.githubusercontent.com/{REPO}/{branch}/{path}")
+                local_path = os.path.join(BASE_DIR, *parts)
+                os.makedirs(os.path.dirname(local_path) or BASE_DIR, exist_ok=True)
+                with open(local_path, "wb") as f:
+                    f.write(data)
+
+            set_status(f"Updated {len(to_update)} file(s) — restart to apply.")
+
+        except Exception as exc:
+            self.root.after(0, lambda: self._set_status(f"Update failed: {exc}", _DOT_ERR))
+        finally:
+            self.root.after(0, lambda: self._update_btn.config(
+                state="normal", text="Check for Updates",
+            ))
+
     def _toggle_log(self):
         if self._show_log.get():
             self._log_frame.pack(fill="x", padx=14, pady=(0, 10))
@@ -456,6 +623,7 @@ class MacroGUI:
         st = macro_state.state
 
         self._runs_var.set(str(st["total_runs"]))
+        self._since_rejoin_var.set(str(st["runs_since_rejoin"]))
 
         if st["session_start"] > 0 and st["running"]:
             self._sess_var.set(_fmt_time(time.time() - st["session_start"]))

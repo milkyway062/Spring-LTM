@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 
 echo Checking dependencies...
-py -3.14 -c "import cv2, numpy, keyboard, pytesseract, requests, PIL" 2>nul
+py -3.14 -c "import cv2, numpy, keyboard, pytesseract, requests, PIL, psutil" 2>nul
 if errorlevel 1 (
     echo Some dependencies are missing. Installing now, please wait...
     echo.
@@ -18,7 +18,7 @@ if errorlevel 1 (
     )
     echo.
     echo Verifying installation...
-    py -3.14 -c "import cv2, numpy, keyboard, pytesseract, requests, PIL" 2>_err.tmp
+    py -3.14 -c "import cv2, numpy, keyboard, pytesseract, requests, PIL, psutil" 2>_err.tmp
     if errorlevel 1 (
         echo ERROR: One or more dependencies could not be installed:
         echo.
