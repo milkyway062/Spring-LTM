@@ -79,7 +79,7 @@ def setup_position(log_cb=print) -> None:
 
         focus_roblox_window()
         r_input.RightClick(44, 365, 0.1)
-        time.sleep(2.5)
+        time.sleep(3)
         r_input.RightClick(255, 344, 0.1)
         time.sleep(2.5)
         run_camera_sequence(log_cb=log_cb)
