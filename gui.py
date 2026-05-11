@@ -468,10 +468,10 @@ class MacroGUI:
 
                 n = macro_state.AUTO_REJOIN_AFTER_RUNS
                 if n > 0 and macro_state.state["runs_since_rejoin"] >= n:
-                    self._log(f"Auto rejoin: {n} runs reached — restarting Roblox")
+                    self._log(f"Auto rejoin: {n} runs reached — rejoining server")
                     self._set_phase("Auto rejoin…")
                     macro_state.state["runs_since_rejoin"] = 0
-                    do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                    self._soft_rejoin()
                     if self._stop_event.is_set():
                         break
                     if is_in_lobby():
@@ -493,6 +493,26 @@ class MacroGUI:
             else:
                 self.root.after(0, self._on_run_complete)
 
+    def _soft_rejoin(self) -> bool:
+        code = macro_state.PRIVATE_SERVER_CODE.strip()
+        if not code:
+            self._log("Soft rejoin: no private server set — skipping")
+            return False
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(code).query)
+        link_code = qs["privateServerLinkCode"][0] if "privateServerLinkCode" in qs else code
+        roblox_uri = f"roblox://placeId=16146832113&linkCode={link_code}/"
+        self._log(f"Soft rejoin: launching {roblox_uri[:60]}…")
+        os.startfile(roblox_uri)
+        self._log("Soft rejoin: waiting for lobby…")
+        deadline = time.time() + 180
+        while time.time() < deadline and not self._stop_event.is_set():
+            if is_in_lobby():
+                break
+            time.sleep(3)
+        focus_roblox_window()
+        return True
+
     def _on_run_complete(self):
         self._start_btn.config(state="normal")
         _hover(self._start_btn, GREEN_D, GREEN_A)
@@ -502,6 +522,10 @@ class MacroGUI:
     def _on_disconnect_restart(self):
         self._log("Restarting after disconnect…")
         self._set_status("reconnecting…", _DOT_STOP)
+        try:
+            focus_roblox_window()
+        except Exception:
+            pass
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
