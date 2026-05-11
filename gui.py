@@ -546,11 +546,10 @@ class MacroGUI:
         if not code:
             self._set_status("no private server set", _DOT_ERR)
             return
-        try:
-            os.startfile(code)
-        except Exception:
-            import subprocess
-            subprocess.Popen(["start", code], shell=True)
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(code).query)
+        link_code = qs["privateServerLinkCode"][0] if "privateServerLinkCode" in qs else code
+        os.startfile(f"roblox://placeId=16146832113&linkCode={link_code}/")
 
     def _on_close(self):
         self._save_prefs()
