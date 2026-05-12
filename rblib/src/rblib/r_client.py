@@ -397,12 +397,23 @@ def get_roblox_hwnd() -> int:
     hwnd_callback = enumWindows(hwnd_iter)
     user32.EnumWindows(hwnd_callback, 5)
 
+    fallback = None
     for hwnd in hwnds:
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if pid.value == r_pid:
+        if pid.value != r_pid:
+            continue
+        if not user32.IsWindowVisible(hwnd):
+            continue
+        rect = wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        w = rect.right - rect.left
+        h = rect.bottom - rect.top
+        if w > 200 and h > 200:
             return hwnd
-    return None
+        if fallback is None:
+            fallback = hwnd
+    return fallback
 
 def hold_singletonMutex():
     """
