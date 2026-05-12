@@ -1,6 +1,6 @@
 {
-  "private_server": "https://www.roblox.com/games/16146832113/Anime-Vanguards?privateServerLinkCode=REDACTED_PRIVATE_SERVER_CODE",
-  "webhook_url": "https://discord.com/api/webhooks/1503175021890109530/REDACTED_WEBHOOK_TOKEN",
+  "private_server": "",
+  "webhook_url": "",
   "auto_rejoin_runs": "200",
   "large_lobby_icons": false
 }
