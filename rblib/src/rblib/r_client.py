@@ -453,14 +453,22 @@ def focus_roblox_window(x: int = 15, y: int = 15, w: int = 800, h: int = 600) ->
     Call at macro startup to ensure all window-relative coordinates are valid.
     Returns True if window was found and repositioned.
     """
-    hwnd = get_roblox_hwnd()
-    if hwnd is None:
-        return False
-    SWP_NOZORDER = 0x0004
-    user32.ShowWindow(hwnd, 9)  # SW_RESTORE — unminimize if needed
-    user32.SetForegroundWindow(hwnd)
-    user32.SetWindowPos(hwnd, 0, x, y, w, h, SWP_NOZORDER)
-    return True
+    import pygetwindow
+    import time as _time
+    for win in pygetwindow.getAllWindows():
+        if win.title == "Roblox":
+            try:
+                win.restore()
+                _time.sleep(0.1)
+                win.resizeTo(w, h)
+                _time.sleep(0.1)
+                win.moveTo(x, y)
+                _time.sleep(0.1)
+                win.activate()
+                return True
+            except Exception:
+                return False
+    return False
 
 
 def get_geometry(hwnd) -> Rect:
