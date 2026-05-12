@@ -25,7 +25,7 @@ import macro_state
 import webhook
 from main_loop import run
 from lobby_path import do_lobby_path, is_in_lobby
-from rejoin import do_rejoin
+from rejoin import do_rejoin, _roblox_running
 from rblib.r_client import focus_roblox_window
 
 _CONFIG_PATH = os.path.join(_HERE, "config.json")
@@ -291,13 +291,25 @@ class MacroGUI:
         self._btn(row, "Join", self._on_join_ps, CARD2, BORDER2,
                   font=FONT_LABEL).pack(side="left")
 
-        row = self._row(inner, pady=(4, 12))
+        row = self._row(inner, pady=(4, 4))
         self._field_label(row, "Webhook URL")
         self._wh_var = tk.StringVar(value=self._cfg.get("webhook_url", ""))
         wh = self._entry(row, self._wh_var)
         wh.pack(side="left", fill="x", expand=True)
         wh.bind("<FocusOut>", lambda _: self._save_prefs())
         wh.bind("<Return>",   lambda _: self._save_prefs())
+
+        row = self._row(inner, pady=(4, 12))
+        self._field_label(row, "Area icons")
+        self._small_icons_var = tk.BooleanVar(value=not self._cfg.get("large_lobby_icons", True))
+        tk.Checkbutton(
+            row, text="Small area icons",
+            variable=self._small_icons_var,
+            command=self._apply_large_icons,
+            bg=CARD, fg=FG, selectcolor=ENTRY,
+            activebackground=CARD, activeforeground=FG,
+            font=FONT_LABEL, bd=0, cursor="hand2",
+        ).pack(side="left")
 
         for var in (self._ps_var,):
             var.trace_add("write", lambda *_: self._save_prefs())
@@ -350,15 +362,22 @@ class MacroGUI:
         macro_state.WEBHOOK_URL            = self._wh_var.get().strip()
         macro_state.PRIVATE_SERVER_CODE    = self._ps_var.get().strip()
         macro_state.AUTO_REJOIN_AFTER_RUNS = self._parse_rejoin()
+        macro_state.LARGE_LOBBY_ICONS      = not self._small_icons_var.get()
+
+    def _apply_large_icons(self) -> None:
+        macro_state.LARGE_LOBBY_ICONS = not self._small_icons_var.get()
+        self._save_prefs()
 
     def _save_prefs(self):
         macro_state.WEBHOOK_URL            = self._wh_var.get().strip()
         macro_state.PRIVATE_SERVER_CODE    = self._ps_var.get().strip()
         macro_state.AUTO_REJOIN_AFTER_RUNS = self._parse_rejoin()
+        macro_state.LARGE_LOBBY_ICONS      = not self._small_icons_var.get()
         _save_config({
-            "private_server":   self._ps_var.get().strip(),
-            "webhook_url":      self._wh_var.get().strip(),
-            "auto_rejoin_runs": self._rejoin_var.get().strip(),
+            "private_server":     self._ps_var.get().strip(),
+            "webhook_url":        self._wh_var.get().strip(),
+            "auto_rejoin_runs":   self._rejoin_var.get().strip(),
+            "large_lobby_icons":  not self._small_icons_var.get(),
         })
 
     def _parse_rejoin(self) -> int:
@@ -397,6 +416,31 @@ class MacroGUI:
                 pass
             time.sleep(2)
 
+    def _crash_watcher(self):
+        time.sleep(15)
+        consecutive = 0
+        while not self._stop_event.is_set() and macro_state.state.get("running"):
+            if macro_state._rejoin_in_progress:
+                consecutive = 0
+                time.sleep(5)
+                continue
+            if not _roblox_running():
+                consecutive += 1
+                if consecutive >= 2:
+                    self._log("Roblox crash detected — restarting…")
+                    self._set_phase("Roblox crashed — restarting…")
+                    self._set_status("crashed", _DOT_ERR)
+                    macro_state._crash_event.set()
+                    if self._thread and self._thread.is_alive():
+                        ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                            ctypes.c_ulong(self._thread.ident),
+                            ctypes.py_object(SystemExit),
+                        )
+                    return
+            else:
+                consecutive = 0
+            time.sleep(5)
+
     def _stuck_watcher(self):
         while not self._stop_event.is_set() and macro_state.state.get("running"):
             time.sleep(10)
@@ -419,6 +463,8 @@ class MacroGUI:
 
     def _worker(self):
         macro_state._disconnect_event.clear()
+        macro_state._auto_rejoin_event.clear()
+        macro_state._crash_event.clear()
         macro_state.state.update({
             "session_start":    macro_state.state.get("session_start") or time.time(),
             "total_runs":       macro_state.state.get("total_runs", 0),
@@ -429,6 +475,7 @@ class MacroGUI:
 
         threading.Thread(target=self._disconnect_watcher, daemon=True).start()
         threading.Thread(target=self._stuck_watcher,      daemon=True).start()
+        threading.Thread(target=self._crash_watcher,      daemon=True).start()
 
         try:
             if macro_state._stuck_event.is_set():
@@ -439,10 +486,32 @@ class MacroGUI:
                 if not ok or self._stop_event.is_set():
                     return
 
+            if not _roblox_running():
+                self._log("Roblox not running — launching…")
+                self._set_phase("Launching Roblox…")
+                ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                if not ok and not self._stop_event.is_set():
+                    self._log("Launch: first attempt failed — retrying once…")
+                    time.sleep(3)
+                    ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                if not ok or self._stop_event.is_set():
+                    self._log("Launch: failed to open Roblox — stopping")
+                    self._set_phase("Launch failed — stopped")
+                    self.root.after(0, lambda: self._set_status("launch failed", _DOT_ERR))
+                    return
+
+            lobby_wait_deadline = time.time() + 60
+            while not self._stop_event.is_set() and not is_in_lobby():
+                if time.time() >= lobby_wait_deadline:
+                    break
+                time.sleep(2)
+            if self._stop_event.is_set():
+                return
             if is_in_lobby():
                 self._log("Lobby detected — pathing to Spring LTM")
                 self._set_phase("Lobby pathing…")
                 do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
+                macro_state.state["last_wave_seen"] = time.time()
 
             while not self._stop_event.is_set():
                 run_start = time.time()
@@ -455,10 +524,18 @@ class MacroGUI:
                     break
 
                 elapsed = time.time() - run_start
-                macro_state.state["total_runs"]      += 1
-                macro_state.state["total_run_time"]  += elapsed
-                macro_state.state["last_run_time"]    = elapsed
+                macro_state.state["total_runs"]        += 1
+                macro_state.state["total_run_time"]    += elapsed
+                macro_state.state["last_run_time"]      = elapsed
                 macro_state.state["runs_since_rejoin"] += 1
+                macro_state.state["last_wave_seen"]     = time.time()
+
+                n = macro_state.AUTO_REJOIN_AFTER_RUNS
+                since = macro_state.state["runs_since_rejoin"]
+                if n > 0:
+                    self._log(f"Run done — {since}/{n} runs since rejoin")
+                else:
+                    self._log(f"Run done — run #{macro_state.state['total_runs']} (auto rejoin off)")
 
                 threading.Thread(
                     target=webhook.send,
@@ -466,17 +543,23 @@ class MacroGUI:
                     daemon=True,
                 ).start()
 
-                n = macro_state.AUTO_REJOIN_AFTER_RUNS
-                if n > 0 and macro_state.state["runs_since_rejoin"] >= n:
+                if n > 0 and since >= n:
                     self._log(f"Auto rejoin: {n} runs reached — rejoining server")
                     self._set_phase("Auto rejoin…")
+                    ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                    if not ok and not self._stop_event.is_set():
+                        self._log("Auto rejoin: first attempt failed — retrying once…")
+                        time.sleep(3)
+                        ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                    if not ok or self._stop_event.is_set():
+                        self._log("Auto rejoin: failed after retry — stopping")
+                        self._set_phase("Rejoin failed — stopped")
+                        self.root.after(0, lambda: self._set_status("rejoin failed", _DOT_ERR))
+                        return
                     macro_state.state["runs_since_rejoin"] = 0
-                    self._soft_rejoin()
-                    if self._stop_event.is_set():
-                        break
-                    if is_in_lobby():
-                        self._set_phase("Lobby pathing…")
-                        do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
+                    macro_state.state["last_wave_seen"] = time.time()
+                    macro_state._auto_rejoin_event.set()
+                    break
 
             self._set_phase("Stopped")
 
@@ -488,36 +571,26 @@ class MacroGUI:
             macro_state.state["running"] = False
             if macro_state._stuck_event.is_set() and not self._stop_event.is_set():
                 self.root.after(0, self._on_stuck_restart)
+            elif macro_state._crash_event.is_set() and not self._stop_event.is_set():
+                self.root.after(0, self._on_crash_restart)
             elif macro_state._disconnect_event.is_set() and not self._stop_event.is_set():
                 self.root.after(0, self._on_disconnect_restart)
+            elif macro_state._auto_rejoin_event.is_set() and not self._stop_event.is_set():
+                self.root.after(0, self._on_auto_rejoin_restart)
             else:
                 self.root.after(0, self._on_run_complete)
-
-    def _soft_rejoin(self) -> bool:
-        code = macro_state.PRIVATE_SERVER_CODE.strip()
-        if not code:
-            self._log("Soft rejoin: no private server set — skipping")
-            return False
-        from urllib.parse import urlparse, parse_qs
-        qs = parse_qs(urlparse(code).query)
-        link_code = qs["privateServerLinkCode"][0] if "privateServerLinkCode" in qs else code
-        roblox_uri = f"roblox://placeId=16146832113&linkCode={link_code}/"
-        self._log(f"Soft rejoin: launching {roblox_uri[:60]}…")
-        os.startfile(roblox_uri)
-        self._log("Soft rejoin: waiting for lobby…")
-        deadline = time.time() + 180
-        while time.time() < deadline and not self._stop_event.is_set():
-            if is_in_lobby():
-                break
-            time.sleep(3)
-        focus_roblox_window()
-        return True
 
     def _on_run_complete(self):
         self._start_btn.config(state="normal")
         _hover(self._start_btn, GREEN_D, GREEN_A)
         self._stop_btn.config(state="disabled")
         self._set_status("idle", _DOT_IDLE)
+
+    def _on_crash_restart(self):
+        self._log("Restarting after crash…")
+        self._set_status("restarting…", _DOT_STOP)
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
 
     def _on_disconnect_restart(self):
         self._log("Restarting after disconnect…")
@@ -526,6 +599,12 @@ class MacroGUI:
             focus_roblox_window()
         except Exception:
             pass
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _on_auto_rejoin_restart(self):
+        self._log("Restarting after auto rejoin…")
+        self._set_status("rejoining…", _DOT_STOP)
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
@@ -540,6 +619,7 @@ class MacroGUI:
     def _on_start(self):
         if self._thread and self._thread.is_alive():
             return
+        self._apply_rejoin()
         self._save_prefs()
         self._stop_event.clear()
         self._set_status("running", _DOT_RUN)

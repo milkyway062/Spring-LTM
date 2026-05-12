@@ -73,30 +73,57 @@ def _extract_link_code(value: str) -> str:
     return value
 
 
+def _get_roblox_exe_any() -> str | None:
+    """Return Roblox exe path from running process or Windows registry fallback."""
+    exe = _get_roblox_exe()
+    if exe:
+        return exe
+    try:
+        from rblib.r_client import get_roblox_path
+        path = get_roblox_path()
+        if path and os.path.isfile(path):
+            return path
+    except Exception:
+        pass
+    return None
+
+
 def do_rejoin(
     stop_event: threading.Event | None = None,
     log_cb=print,
 ) -> bool:
     """Kill Roblox, relaunch directly into the private server, wait for lobby."""
-    def stopped() -> bool:
-        return stop_event is not None and stop_event.is_set()
-
     ps_code = macro_state.PRIVATE_SERVER_CODE.strip()
     if not ps_code:
         log_cb("Rejoin: no private server URL configured — skipping")
         return False
 
-    roblox_exe = _get_roblox_exe()
+    roblox_exe = _get_roblox_exe_any()
     if not roblox_exe:
-        log_cb("Rejoin: RobloxPlayerBeta.exe not found — cannot rejoin")
+        log_cb("Rejoin: RobloxPlayerBeta.exe not found in processes or registry — cannot rejoin")
         return False
+
+    macro_state._rejoin_in_progress = True
+    try:
+        return _do_rejoin_inner(roblox_exe, ps_code, stop_event, log_cb)
+    finally:
+        macro_state._rejoin_in_progress = False
+
+
+def _do_rejoin_inner(roblox_exe, ps_code, stop_event, log_cb) -> bool:
+    def stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
 
     log_cb("Rejoin: killing Roblox…")
     _kill_roblox()
-    for _ in range(20):
+    kill_deadline = time.time() + 15
+    while _roblox_running():
         if stopped():
             return False
-        time.sleep(0.1)
+        if time.time() >= kill_deadline:
+            log_cb("Rejoin: Roblox process still alive after 15s — proceeding anyway")
+            break
+        time.sleep(0.5)
 
     link_code  = _extract_link_code(ps_code)
     rejoin_url = f"roblox://placeId={_PLACE_ID}&linkCode={link_code}/"

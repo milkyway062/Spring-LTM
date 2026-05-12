@@ -619,7 +619,7 @@ def wait_for_color(
             time.sleep(0.1)
 
 
-def lobby_path(Area: Areas, Stage: int | Stages, Act: int):
+def lobby_path(Area: Areas, Stage: int | Stages, Act: int, large_icons: bool = True):
     """
     Navigate through the lobby UI to enter a selected area, stage, and act.
 
@@ -657,7 +657,7 @@ def lobby_path(Area: Areas, Stage: int | Stages, Act: int):
         Areas.BOSS_RAID: (88, 531),
         Areas.ODYSSEY: (214, 523),
         Areas.WORLDLINES: (342, 525),
-        Areas.WINTER_EVENT: (157, 459),
+        Areas.WINTER_EVENT: (589, 529) if large_icons else (157, 459),
         Areas.WHITEBEARD: (92, 258),
     }
 

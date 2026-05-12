@@ -24,6 +24,7 @@ for _p in (
         sys.path.insert(0, _p)
 
 from AnimeVangaurdsLibrary.tools.av_game import Areas, lobby_path
+import macro_state
 
 # ------------------------------------------------------------------
 # Target — CHANGE ME for Spring LTM
@@ -111,7 +112,7 @@ def do_lobby_path(
         f"Lobby path: navigating to {_TARGET_AREA.name} "
         f"(Stage {_TARGET_STAGE}, Act {_TARGET_ACT})"
     )
-    lobby_path(_TARGET_AREA, _TARGET_STAGE, _TARGET_ACT)
+    lobby_path(_TARGET_AREA, _TARGET_STAGE, _TARGET_ACT, large_icons=macro_state.LARGE_LOBBY_ICONS)
     wait_for_vote_start(stop_event=stop_event, log_cb=log_cb)
 
 
