@@ -337,7 +337,22 @@ def get_roblox_pid() -> int:
         OSError:
             If EnumProcesses fails.
     """
-    roblox_path = get_roblox_path()
+    try:
+        roblox_path = get_roblox_path()
+    except OSError:
+        # Registry key missing (some Roblox installs) — fall back to name search
+        try:
+            import psutil
+            for proc in psutil.process_iter(["name", "pid"]):
+                try:
+                    if "robloxplayerbeta" in proc.name().lower():
+                        return proc.pid
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except ImportError:
+            pass
+        return None
+
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
     proc_ids = (wintypes.DWORD * 4096)()
     proc_size = wintypes.DWORD()
