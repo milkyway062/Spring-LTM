@@ -10,6 +10,7 @@
   - Setup
  
 ## $\color{purple}\text{Settings}$ - $\color{blue}\text{Roblox}$
+- DISABLE VC 
 - `0.07` Sensitivity - I forgot to switch to .2 before I set it so its at .7 till I change it
 - `Lowest` Graphics
 - Have click to move `On`
