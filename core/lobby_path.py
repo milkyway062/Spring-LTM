@@ -52,7 +52,16 @@ def is_in_lobby() -> bool:
     """True if the AreaIcon (lobby hub) is visible on screen."""
     try:
         from rblib import r_util
-        return r_util.imageExists(_AREA_ICON, 0.75)
+        return r_util.imageExists(_AREA_ICON, 0.65)
+    except Exception:
+        return False
+
+
+def is_in_game() -> bool:
+    """True if the Vote Start button is visible — loaded into a game instance, not the lobby hub."""
+    try:
+        from rblib import r_util
+        return r_util.imageExists(_VOTE_START_IMG, 0.7)
     except Exception:
         return False
 
@@ -112,7 +121,10 @@ def do_lobby_path(
         f"Lobby path: navigating to {_TARGET_AREA.name} "
         f"(Stage {_TARGET_STAGE}, Act {_TARGET_ACT})"
     )
-    lobby_path(_TARGET_AREA, _TARGET_STAGE, _TARGET_ACT, large_icons=macro_state.LARGE_LOBBY_ICONS)
+    result = lobby_path(_TARGET_AREA, _TARGET_STAGE, _TARGET_ACT, large_icons=macro_state.LARGE_LOBBY_ICONS)
+    if result is False:
+        log_cb("Lobby path: navigation failed — skipping vote-start wait")
+        return
     wait_for_vote_start(stop_event=stop_event, log_cb=log_cb)
 
 

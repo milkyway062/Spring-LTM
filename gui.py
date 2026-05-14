@@ -24,7 +24,7 @@ import keyboard
 import macro_state
 import webhook
 from main_loop import run
-from lobby_path import do_lobby_path, is_in_lobby
+from lobby_path import do_lobby_path, is_in_lobby, is_in_game
 from rejoin import do_rejoin, _roblox_running
 from rblib.r_client import focus_roblox_window
 
@@ -462,6 +462,7 @@ class MacroGUI:
     # ── worker ─────────────────────────────────────────────────
 
     def _worker(self):
+        _was_disconnect = macro_state._disconnect_event.is_set()
         macro_state._disconnect_event.clear()
         macro_state._auto_rejoin_event.clear()
         macro_state._crash_event.clear()
@@ -485,6 +486,15 @@ class MacroGUI:
                 ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
                 if not ok or self._stop_event.is_set():
                     return
+                macro_state.state["runs_since_rejoin"] = 0
+
+            if _was_disconnect:
+                self._log("Disconnect recovery — rejoining private server…")
+                self._set_phase("Rejoining after disconnect…")
+                ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                if not ok or self._stop_event.is_set():
+                    return
+                macro_state.state["runs_since_rejoin"] = 0
 
             if not _roblox_running():
                 self._log("Roblox not running — launching…")
@@ -500,18 +510,29 @@ class MacroGUI:
                     self.root.after(0, lambda: self._set_status("launch failed", _DOT_ERR))
                     return
 
-            lobby_wait_deadline = time.time() + 60
-            while not self._stop_event.is_set() and not is_in_lobby():
-                if time.time() >= lobby_wait_deadline:
+            _state_deadline = time.time() + 120
+            _found_lobby = False
+            _found_game  = False
+            while time.time() < _state_deadline and not self._stop_event.is_set():
+                if is_in_lobby():
+                    _found_lobby = True
+                    break
+                if is_in_game():
+                    _found_game = True
                     break
                 time.sleep(2)
             if self._stop_event.is_set():
                 return
-            if is_in_lobby():
+            if _found_lobby:
                 self._log("Lobby detected — pathing to Spring LTM")
                 self._set_phase("Lobby pathing…")
                 do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
                 macro_state.state["last_wave_seen"] = time.time()
+            elif _found_game:
+                self._log("Game instance detected — skipping lobby path")
+                macro_state.state["last_wave_seen"] = time.time()
+            else:
+                self._log("Warning: lobby/game not detected within 120s — continuing")
 
             while not self._stop_event.is_set():
                 run_start = time.time()

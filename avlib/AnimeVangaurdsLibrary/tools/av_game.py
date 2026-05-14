@@ -640,13 +640,16 @@ def lobby_path(Area: Areas, Stage: int | Stages, Act: int, large_icons: bool = T
 
     if isinstance(Stage, Stages):
         Stage = Stage.value
-    click_area = r_util.clickImage(0, 0.1, os.path.join(resources, "AreaIcon.png"), 0.8)
-
-    if not click_area:
-        print("PATH FAILURE")
-        return False
-
-    wait_for_color((765, 114), (255, 255, 255), 10)
+    _area_img  = os.path.join(resources, "AreaIcon.png")
+    _deadline  = time.time() + 15
+    while True:
+        r_util.clickImage(0, 0.1, _area_img, 0.8)
+        if r_util.pixelMatchesColor(765, 114, (255, 255, 255), 10):
+            break
+        if time.time() > _deadline:
+            print("PATH FAILURE")
+            return False
+        time.sleep(0.5)
 
     Area_Pos = {
         Areas.STORY: (714, 409),
@@ -863,19 +866,33 @@ def read_wave() -> int:
         region[2] + rx,
         region[3] + ry,
     ))
-    img = cv2.resize(img, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+    img = cv2.resize(img, None, fx=6, fy=6, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
-    binary = cv2.copyMakeBorder(binary, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
-    text = pytesseract.image_to_string(
-        binary,
-        config="--psm 7 -c tessedit_char_whitelist=0123456789",
-    ).strip()
-    try:
-        val = int(text)
-        return val if 1 <= val <= 30 else -1
-    except ValueError:
-        return -1
+
+    _WHITELIST = "-c tessedit_char_whitelist=0123456789"
+
+    def _ocr(binary, psm=7) -> int:
+        padded = cv2.copyMakeBorder(binary, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
+        text = pytesseract.image_to_string(
+            padded,
+            config=f"--psm {psm} {_WHITELIST}",
+        ).strip()
+        try:
+            v = int(text)
+            return v if 1 <= v <= 50 else -1
+        except ValueError:
+            return -1
+
+    for thresh in (180, 150, 210):
+        _, b = cv2.threshold(gray, thresh, 255, cv2.THRESH_BINARY_INV)
+        v = _ocr(b, psm=7)
+        if v != -1:
+            return v
+        v = _ocr(b, psm=10)
+        if v != -1:
+            return v
+
+    return -1
 
 
 def return_to_spawn(mouse_cords=None) -> None:

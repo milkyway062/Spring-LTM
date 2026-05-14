@@ -56,6 +56,9 @@ def setup_position(log_cb=print) -> None:
     start()
 
     if _first_run:
+        log_cb("Positioning: zooming out")
+        r_input.PressKey("o", 5)
+
         log_cb(f"Positioning: clicking {POST_START_CLICK_1} twice")
         r_input.Click(*POST_START_CLICK_1, 0.1)
         time.sleep(1.0)

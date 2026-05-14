@@ -324,29 +324,45 @@ def get_roblox_path() -> str:
     return value.split(" ")[0].replace("\"", "")
 
 
+def _current_session_id() -> int:
+    sid = ctypes.c_ulong(0)
+    kernel.ProcessIdToSessionId(kernel.GetCurrentProcessId(), ctypes.byref(sid))
+    return sid.value
+
+
+def _pid_session_id(pid: int) -> int | None:
+    sid = ctypes.c_ulong(0)
+    if kernel.ProcessIdToSessionId(ctypes.c_ulong(pid), ctypes.byref(sid)):
+        return sid.value
+    return None
+
+
 def get_roblox_pid() -> int:
     """
-    Find the process ID of the running Roblox client by matching the
-    executable path against all running processes.
+    Find the process ID of the running Roblox client in the current Windows
+    session, matching the executable path against all running processes.
 
     Returns:
         int | None:
-            The Roblox process ID if found, otherwise None.
+            The Roblox process ID if found in this session, otherwise None.
 
     Raises:
         OSError:
             If EnumProcesses fails.
     """
+    my_sid = _current_session_id()
+
     try:
         roblox_path = get_roblox_path()
     except OSError:
-        # Registry key missing (some Roblox installs) — fall back to name search
+        # Registry key missing — fall back to name search, session-scoped
         try:
             import psutil
             for proc in psutil.process_iter(["name", "pid"]):
                 try:
                     if "robloxplayerbeta" in proc.name().lower():
-                        return proc.pid
+                        if _pid_session_id(proc.pid) == my_sid:
+                            return proc.pid
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         except ImportError:
@@ -364,6 +380,8 @@ def get_roblox_pid() -> int:
     proc_pids = proc_ids[:num_proc]
 
     for pid in proc_pids:
+        if _pid_session_id(pid) != my_sid:
+            continue
         process_handle = kernel.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not process_handle:
             continue
