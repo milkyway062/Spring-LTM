@@ -41,7 +41,9 @@ _TARGET_ACT: int = 1
 _AREA_ICON = os.path.join(
     _BASE, "avlib", "AnimeVangaurdsLibrary", "tools", "resources", "AreaIcon.png"
 )
-_VOTE_START_IMG = os.path.join(_BASE, "Images", "vote_start.png")
+_VOTE_START_IMG  = os.path.join(_BASE, "Images", "vote_start.png")
+_FAILED_IMG      = os.path.join(_BASE, "Images", "Failed.png")
+_RETRY_IMG       = os.path.join(_BASE, "Images", "Retry.png")
 
 # Lobby UI close coordinates (verify these match the Spring LTM build)
 _DAILY_REWARDS_CLOSE = (654, 187)
@@ -63,6 +65,39 @@ def is_in_game() -> bool:
         from rblib import r_util
         return r_util.imageExists(_VOTE_START_IMG, 0.7)
     except Exception:
+        return False
+
+
+def is_result_screen() -> bool:
+    """True if the Spring LTM end-of-match 'Failed' banner is visible."""
+    import os
+    if not os.path.exists(_FAILED_IMG):
+        return False
+    try:
+        from rblib import r_util
+        return r_util.imageExists(_FAILED_IMG, 0.8)
+    except Exception:
+        return False
+
+
+def click_retry(log_cb=print) -> bool:
+    """Click the Retry button on the result screen. Returns True if button was found."""
+    import os
+    if not os.path.exists(_RETRY_IMG):
+        log_cb("Result screen: Retry.png not found — skipping template click")
+        return False
+    try:
+        import pyautogui
+        loc = pyautogui.locateOnScreen(_RETRY_IMG, confidence=0.8)
+        if loc:
+            cx, cy = pyautogui.center(loc)
+            log_cb(f"Result screen: clicking Retry at ({cx}, {cy})")
+            pyautogui.click(cx, cy)
+            return True
+        log_cb("Result screen: Retry button not found on screen")
+        return False
+    except Exception as e:
+        log_cb(f"Result screen: click_retry failed — {e}")
         return False
 
 

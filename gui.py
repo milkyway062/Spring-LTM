@@ -462,8 +462,10 @@ class MacroGUI:
     # ── worker ─────────────────────────────────────────────────
 
     def _worker(self):
-        _was_disconnect = macro_state._disconnect_event.is_set()
+        _was_disconnect   = macro_state._disconnect_event.is_set()
+        _was_match_ended  = macro_state._match_ended_event.is_set()
         macro_state._disconnect_event.clear()
+        macro_state._match_ended_event.clear()
         macro_state._auto_rejoin_event.clear()
         macro_state._crash_event.clear()
         macro_state.state.update({
@@ -496,6 +498,14 @@ class MacroGUI:
                     return
                 macro_state.state["runs_since_rejoin"] = 0
 
+            if _was_match_ended:
+                self._log("Match ended — rejoining for next run…")
+                self._set_phase("Rejoining after match…")
+                ok = do_rejoin(stop_event=self._stop_event, log_cb=self._log)
+                if not ok or self._stop_event.is_set():
+                    return
+                macro_state.state["runs_since_rejoin"] = 0
+
             if not _roblox_running():
                 self._log("Roblox not running — launching…")
                 self._set_phase("Launching Roblox…")
@@ -510,29 +520,36 @@ class MacroGUI:
                     self.root.after(0, lambda: self._set_status("launch failed", _DOT_ERR))
                     return
 
-            _state_deadline = time.time() + 120
-            _found_lobby = False
-            _found_game  = False
-            while time.time() < _state_deadline and not self._stop_event.is_set():
-                if is_in_lobby():
-                    _found_lobby = True
-                    break
-                if is_in_game():
-                    _found_game = True
-                    break
-                time.sleep(2)
-            if self._stop_event.is_set():
-                return
-            if _found_lobby:
-                self._log("Lobby detected — pathing to Spring LTM")
+            if macro_state._just_rejoined:
+                macro_state._just_rejoined = False
+                self._log("Post-rejoin — assuming lobby, pathing to Spring LTM")
                 self._set_phase("Lobby pathing…")
                 do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
                 macro_state.state["last_wave_seen"] = time.time()
-            elif _found_game:
-                self._log("Game instance detected — skipping lobby path")
-                macro_state.state["last_wave_seen"] = time.time()
             else:
-                self._log("Warning: lobby/game not detected within 120s — continuing")
+                _state_deadline = time.time() + 120
+                _found_lobby = False
+                _found_game  = False
+                while time.time() < _state_deadline and not self._stop_event.is_set():
+                    if is_in_lobby():
+                        _found_lobby = True
+                        break
+                    if is_in_game():
+                        _found_game = True
+                        break
+                    time.sleep(2)
+                if self._stop_event.is_set():
+                    return
+                if _found_lobby:
+                    self._log("Lobby detected — pathing to Spring LTM")
+                    self._set_phase("Lobby pathing…")
+                    do_lobby_path(stop_event=self._stop_event, log_cb=self._log)
+                    macro_state.state["last_wave_seen"] = time.time()
+                elif _found_game:
+                    self._log("Game instance detected — skipping lobby path")
+                    macro_state.state["last_wave_seen"] = time.time()
+                else:
+                    self._log("Warning: lobby/game not detected within 120s — continuing")
 
             while not self._stop_event.is_set():
                 run_start = time.time()
@@ -542,6 +559,10 @@ class MacroGUI:
                 run(stop_event=self._stop_event, log_cb=self._log)
 
                 if self._stop_event.is_set():
+                    break
+
+                if macro_state._match_ended_event.is_set():
+                    self._log("Match ended — rejoining for next run")
                     break
 
                 elapsed = time.time() - run_start
@@ -596,6 +617,8 @@ class MacroGUI:
                 self.root.after(0, self._on_crash_restart)
             elif macro_state._disconnect_event.is_set() and not self._stop_event.is_set():
                 self.root.after(0, self._on_disconnect_restart)
+            elif macro_state._match_ended_event.is_set() and not self._stop_event.is_set():
+                self.root.after(0, self._on_match_ended_restart)
             elif macro_state._auto_rejoin_event.is_set() and not self._stop_event.is_set():
                 self.root.after(0, self._on_auto_rejoin_restart)
             else:
@@ -610,6 +633,12 @@ class MacroGUI:
     def _on_crash_restart(self):
         self._log("Restarting after crash…")
         self._set_status("restarting…", _DOT_STOP)
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _on_match_ended_restart(self):
+        self._log("Restarting after match end…")
+        self._set_status("rejoining…", _DOT_STOP)
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 

@@ -22,6 +22,7 @@ from AnimeVangaurdsLibrary.tools.av_game import start, read_wave, restart_match
 from AnimeVangaurdsLibrary.tools.av_unit import place_unit
 
 from position_setup import setup_position
+from lobby_path import is_result_screen, click_retry
 import macro_state
 
 
@@ -93,7 +94,7 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     if stopped(): return
 
     log_cb("Loop: placing slot 2 (unit 3)")
-    place_unit(2, (254, 105))
+    place_unit(2, (244, 105))
     if stopped(): return
 
     log_cb("Loop: placing slot 3 (unit 2)")
@@ -137,9 +138,12 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     while not stopped():
         if _tracked_wave() >= 5:
             break
+        # always refresh so stuck watcher doesn't fire during long placement phases
+        macro_state.state["last_wave_seen"] = time.time()
         if time.time() > _wave5_deadline:
-            log_cb("Loop: wave 5 not reached in 5 min — match failed, restarting")
-            restart_match()
+            log_cb("Loop: wave 5 not reached in 5 min — match failed")
+            if not is_result_screen() or not click_retry(log_cb):
+                macro_state._match_ended_event.set()
             return
         time.sleep(0.3)
     if stopped(): return
@@ -148,6 +152,7 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     log_cb("Loop: waiting for wave 20...")
     while not stopped():
         wave = _tracked_wave()
+        macro_state.state["last_wave_seen"] = time.time()
         if wave >= 20:
             break
 
@@ -163,8 +168,9 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
 
         # if placement never appeared AND wave UI is gone → match failed
         if _timed_out and _tracked_wave() == -1:
-            log_cb("Loop: placement timeout + no wave — match failed, restarting")
-            restart_match()
+            log_cb("Loop: placement timeout + no wave — match failed")
+            if not is_result_screen() or not click_retry(log_cb):
+                macro_state._match_ended_event.set()
             return
 
         r_input.Click(666, 105, 0.2)
@@ -178,7 +184,7 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
         r_input.PressKey("e")
     if stopped(): return
 
-    log_cb("Loop: restarting match")
+    log_cb("Loop: wave 20 reached — restarting match")
     restart_match()
 
 

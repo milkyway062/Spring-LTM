@@ -270,18 +270,22 @@ def _do_rejoin_inner(roblox_exe, ps_code, stop_event, log_cb) -> bool:
 
     log_cb("Rejoin: waiting for lobby to load…")
     deadline = time.time() + _LOBBY_WAIT_TIMEOUT
+    _lobby_confirmed = False
     while time.time() < deadline:
         if stopped():
             return False
         try:
             from lobby_path import is_in_lobby
             if is_in_lobby():
-                log_cb("Rejoin: lobby detected")
-                break
+                time.sleep(1.0)
+                if is_in_lobby():
+                    log_cb("Rejoin: lobby confirmed (2 consecutive hits)")
+                    _lobby_confirmed = True
+                    break
         except Exception:
             pass
         time.sleep(3)
-    else:
+    if not _lobby_confirmed:
         log_cb("Rejoin: timed out waiting for lobby — continuing anyway")
 
     try:
@@ -290,5 +294,7 @@ def _do_rejoin_inner(roblox_exe, ps_code, stop_event, log_cb) -> bool:
     except Exception:
         pass
 
+    import macro_state
+    macro_state._just_rejoined = True
     log_cb("Rejoin: complete")
     return True

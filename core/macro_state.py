@@ -11,7 +11,9 @@ _disconnect_event    = threading.Event()
 _stuck_event         = threading.Event()
 _auto_rejoin_event   = threading.Event()
 _crash_event         = threading.Event()
+_match_ended_event   = threading.Event()
 _rejoin_in_progress  = False
+_just_rejoined       = False
 
 state = {
     "total_runs":       0,
