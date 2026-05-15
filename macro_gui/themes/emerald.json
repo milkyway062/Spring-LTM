@@ -1,0 +1,25 @@
+{
+  "name": "emerald",
+  "reduce_motion": false,
+  "tokens": {
+    "bg":           "#0c1410",
+    "surface":      "#142018",
+    "surface_2":    "#1a2820",
+    "card_top":     "#182a1e",
+    "card_bot":     "#121e16",
+    "border":       "rgba(255,255,255,0.07)",
+    "border_hi":    "rgba(255,255,255,0.12)",
+    "text":         "#e8edf7",
+    "text_dim":     "#7d8699",
+    "text_mid":     "#aab2c2",
+    "accent":       "#10b981",
+    "accent_soft":  "rgba(16,185,129,0.20)",
+    "accent_hover": "#34d399",
+    "ok":           "#34c759",
+    "warn":         "#e6a23c",
+    "err":          "#ff6b6b",
+    "font_family":  "Inter, Segoe UI, system-ui, sans-serif"
+  },
+  "radii":   {"xl": 16, "lg": 14, "md": 12, "sm": 10, "xs": 8},
+  "spacing": {"xl": 20, "lg": 16, "md": 12, "sm": 8,  "xs": 4}
+}

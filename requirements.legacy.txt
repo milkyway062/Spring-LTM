@@ -1,0 +1,8 @@
+opencv-python
+numpy
+keyboard
+pytesseract
+requests
+pillow
+psutil
+pygetwindow

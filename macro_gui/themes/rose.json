@@ -1,0 +1,25 @@
+{
+  "name": "rose",
+  "reduce_motion": false,
+  "tokens": {
+    "bg":           "#120c10",
+    "surface":      "#221420",
+    "surface_2":    "#2c1a28",
+    "card_top":     "#2a1824",
+    "card_bot":     "#1e1020",
+    "border":       "rgba(255,255,255,0.07)",
+    "border_hi":    "rgba(255,255,255,0.12)",
+    "text":         "#e8edf7",
+    "text_dim":     "#7d8699",
+    "text_mid":     "#aab2c2",
+    "accent":       "#f43f8e",
+    "accent_soft":  "rgba(244,63,142,0.20)",
+    "accent_hover": "#f768a8",
+    "ok":           "#34c759",
+    "warn":         "#e6a23c",
+    "err":          "#ff6b6b",
+    "font_family":  "Inter, Segoe UI, system-ui, sans-serif"
+  },
+  "radii":   {"xl": 16, "lg": 14, "md": 12, "sm": 10, "xs": 8},
+  "spacing": {"xl": 20, "lg": 16, "md": 12, "sm": 8,  "xs": 4}
+}

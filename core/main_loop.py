@@ -33,6 +33,22 @@ def _tracked_wave() -> int:
     return val
 
 
+def _confirmed_wave(target: int, needed: int = 2, gap: float = 0.25) -> bool:
+    """Return True only when `needed` consecutive reads all report >= target.
+
+    Prevents a single OCR glitch from triggering early wave transitions.
+    """
+    hits = 0
+    for _ in range(needed):
+        if _tracked_wave() >= target:
+            hits += 1
+        else:
+            return False
+        if hits < needed:
+            time.sleep(gap)
+    return True
+
+
 NINJUTSU_SELL_NO  = (466, 369)
 NINJUTSU_SELL_YES = (355, 370)
 _PLACEMENT_IMG    = os.path.join(_BASE, "Images", "PlacementPhase.png")
@@ -136,7 +152,8 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     log_cb("Loop: waiting for wave 5...")
     _wave5_deadline = time.time() + 300  # 5-minute hard cap
     while not stopped():
-        if _tracked_wave() >= 5:
+        # require 2 consecutive reads >= 5 to guard against OCR glitches
+        if _confirmed_wave(5):
             break
         # always refresh so stuck watcher doesn't fire during long placement phases
         macro_state.state["last_wave_seen"] = time.time()
@@ -153,16 +170,25 @@ def run(stop_event: threading.Event | None = None, log_cb=print) -> None:
     while not stopped():
         wave = _tracked_wave()
         macro_state.state["last_wave_seen"] = time.time()
-        if wave >= 20:
+        # confirm wave 20 with a second read to avoid acting on a glitch
+        if wave >= 20 and _confirmed_wave(20):
             break
 
         # wait for placement phase indicator (with timeout so we don't hang forever)
         _inner_deadline = time.time() + _PLACEMENT_WAIT_TIMEOUT
         _timed_out = False
+        _last_fail_check = time.time()
         while not stopped() and not r_util.imageExists(_PLACEMENT_IMG, 0.8, region=_PLACEMENT_REGION):
             if time.time() > _inner_deadline:
                 _timed_out = True
                 break
+            # check for fail screen every ~1 s during the spam
+            if time.time() - _last_fail_check >= 1.0:
+                if is_result_screen():
+                    log_cb("Loop: fail screen detected during placement spam")
+                    click_retry(log_cb)
+                    return
+                _last_fail_check = time.time()
             r_input.Click(282, 240, 0.1)
         if stopped(): return
 
