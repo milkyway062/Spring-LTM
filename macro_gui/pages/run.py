@@ -1,7 +1,9 @@
+"""Run page — hero + bento stats + controls strip + phase tag."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -11,23 +13,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from macro_gui.widgets.card import HeroCard, StatBlock
+from macro_gui.widgets.card import GlassCard, HeroCard, StatBlock
 
 STYLE_MAP: dict[str, str] = {
     "primary": "BtnPrimary",
-    "danger": "BtnDanger",
+    "danger":  "BtnDanger",
     "neutral": "BtnNeutral",
-    "ghost": "BtnGhost",
+    "ghost":   "BtnGhost",
 }
 
 
 def build(frame: QWidget, app) -> None:
-    """Build the RUN page inside *frame*.
-
-    Args:
-        frame: Container widget owned by the page stack.
-        app: MacroApp orchestrator instance.
-    """
+    """Build the RUN page inside *frame*."""
     scroll = QScrollArea(frame)
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QScrollArea.NoFrame)
@@ -40,58 +37,87 @@ def build(frame: QWidget, app) -> None:
     inner = QWidget()
     inner.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     lay = QVBoxLayout(inner)
-    lay.setContentsMargins(20, 20, 20, 20)
-    lay.setSpacing(0)
+    lay.setContentsMargins(40, 36, 40, 36)
+    lay.setSpacing(22)
     scroll.setWidget(inner)
 
-    # ── Hero ──────────────────────────────────────────────────────
-    lay.addWidget(HeroCard("Spring LTM", "Anime Vanguards automation"))
-    lay.addSpacing(12)
+    # ── hero ──────────────────────────────────────────────────────
+    lay.addWidget(
+        HeroCard(
+            eyebrow="Spring LTM · Limited Time Mode",
+            title="Spring,\nautomated.",
+            subtitle=(
+                "Hands-off Anime Vanguards runs — auto-rejoin, "
+                "crash recovery, and lobby pathing handled for you."
+            ),
+            meta="Press F1 to start · F3 to stop",
+        )
+    )
 
-    # ── Action buttons ────────────────────────────────────────────
+    # ── bento stat grid (2×N depending on stat count) ────────────
+    grid_wrap = GlassCard()
+    grid_wrap.body.setContentsMargins(24, 22, 24, 22)
+    grid_wrap.body.setSpacing(16)
+
+    eyebrow = QLabel("LIVE SIGNAL")
+    eyebrow.setObjectName("SectionEyebrow")
+    grid_wrap.body.addWidget(eyebrow)
+
+    grid = QGridLayout()
+    grid.setHorizontalSpacing(14)
+    grid.setVerticalSpacing(14)
+
+    accent_ids = {"runs", "uptime"}
+    stats = list(app.spec.stats)
+    for i, stat in enumerate(stats):
+        blk = StatBlock(stat.label, accent=(stat.id in accent_ids))
+        app._stat_blocks.setdefault(stat.id, []).append(blk)
+        grid.addWidget(blk, i // 2, i % 2)
+
+    grid_wrap.body.addLayout(grid)
+    lay.addWidget(grid_wrap)
+
+    # ── controls strip ────────────────────────────────────────────
+    ctrl_wrap = GlassCard()
+    ctrl_wrap.body.setContentsMargins(24, 18, 24, 18)
+    ctrl_wrap.body.setSpacing(10)
+
+    ctrl_eye = QLabel("CONTROLS")
+    ctrl_eye.setObjectName("SectionEyebrow")
+    ctrl_wrap.body.addWidget(ctrl_eye)
+
     btn_row = QHBoxLayout()
-    btn_row.setSpacing(8)
+    btn_row.setSpacing(10)
 
     for action in app.spec.actions.values():
-        btn = QPushButton(action.label)
+        btn = QPushButton(action.label.upper())
         btn.setObjectName(STYLE_MAP.get(action.style, "BtnNeutral"))
-        btn.setFixedHeight(36)
-        btn.setMinimumWidth(120)
+        btn.setMinimumHeight(40)
+        btn.setMinimumWidth(140)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(action.callback)
-        app._action_buttons[action.id] = btn
+        app._action_buttons.setdefault(action.id, []).append(btn)
         btn_row.addWidget(btn)
 
     btn_row.addStretch(1)
-    lay.addLayout(btn_row)
-    lay.addSpacing(16)
+    ctrl_wrap.body.addLayout(btn_row)
+    lay.addWidget(ctrl_wrap)
 
-    # ── Stats row ─────────────────────────────────────────────────
-    stats_row = QHBoxLayout()
-    stats_row.setSpacing(10)
+    # ── phase tag ─────────────────────────────────────────────────
+    phase_row = QHBoxLayout()
+    phase_row.setContentsMargins(4, 0, 0, 0)
+    phase_row.setSpacing(10)
 
-    for stat in app.spec.stats:
-        blk = StatBlock(stat.label)
-        app._stat_blocks[stat.id] = blk
-        stats_row.addWidget(blk)
+    arrow = QLabel("›")
+    arrow.setObjectName("SectionEyebrow")
+    phase_row.addWidget(arrow)
 
-    stats_row.addStretch(1)
-    lay.addLayout(stats_row)
-    lay.addSpacing(16)
+    p_lbl = QLabel("ready")
+    p_lbl.setObjectName("PhaseText")
+    phase_row.addWidget(p_lbl)
+    phase_row.addStretch(1)
 
-    # ── Phase block ───────────────────────────────────────────────
-    phase_wrap = QWidget()
-    phase_wrap.setObjectName("PhaseLine")
-    phase_wrap.setAttribute(Qt.WA_StyledBackground, True)
-    pw_lay = QHBoxLayout(phase_wrap)
-    pw_lay.setContentsMargins(12, 8, 12, 8)
-    pw_lay.setSpacing(0)
-
-    phase_lbl = QLabel("—")
-    phase_lbl.setObjectName("PhaseText")
-    pw_lay.addWidget(phase_lbl)
-
-    app._phase_lbl = phase_lbl
-    lay.addWidget(phase_wrap)
+    app._phase_lbl = p_lbl
+    lay.addLayout(phase_row)
 
     lay.addStretch(1)

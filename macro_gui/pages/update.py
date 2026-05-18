@@ -1,50 +1,56 @@
+"""Update page — check GitHub for a newer release."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from macro_gui.widgets.card import Divider, SectionHeader
+from macro_gui.widgets.card import Divider, GlassCard, SectionHeader
 
 
 def build(frame: QWidget, app) -> None:
-    """Build the UPDATE page inside *frame*.
-
-    Args:
-        frame: Container widget owned by the page stack.
-        app: MacroApp orchestrator instance.
-    """
+    """Build the UPDATE page inside *frame*."""
     lay = QVBoxLayout(frame)
-    lay.setContentsMargins(20, 20, 20, 20)
-    lay.setSpacing(0)
+    lay.setContentsMargins(40, 36, 40, 36)
+    lay.setSpacing(20)
 
-    # ── Header ────────────────────────────────────────────────────
     lay.addWidget(
-        SectionHeader("maintenance", "Update", "Check GitHub for the latest version")
+        SectionHeader(
+            "maintenance",
+            "Update",
+            "Check GitHub for the latest release of Spring LTM.",
+        )
     )
-    lay.addSpacing(8)
     lay.addWidget(Divider())
-    lay.addSpacing(20)
 
-    # ── Check button ──────────────────────────────────────────────
-    btn = QPushButton("Check for Updates")
+    card = GlassCard()
+    card.body.setContentsMargins(28, 24, 28, 24)
+    card.body.setSpacing(14)
+
+    row = QHBoxLayout()
+    row.setSpacing(14)
+
+    btn = QPushButton("CHECK FOR UPDATES")
     btn.setObjectName("BtnPrimary")
-    btn.setFixedSize(180, 36)
+    btn.setMinimumSize(220, 40)
     btn.setCursor(Qt.PointingHandCursor)
     btn.clicked.connect(app._on_update)
     app._update_btn = btn
-    lay.addWidget(btn, alignment=Qt.AlignLeft)
-    lay.addSpacing(12)
+    row.addWidget(btn)
+    row.addStretch(1)
 
-    # ── Status label ──────────────────────────────────────────────
+    card.body.addLayout(row)
+
     status_lbl = QLabel("")
     status_lbl.setObjectName("SectionSub")
     status_lbl.setWordWrap(True)
     app._update_status_lbl = status_lbl
-    lay.addWidget(status_lbl)
+    card.body.addWidget(status_lbl)
 
+    lay.addWidget(card)
     lay.addStretch(1)

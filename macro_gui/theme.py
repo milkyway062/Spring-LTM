@@ -48,11 +48,21 @@ def available_themes() -> list[str]:
 
 
 def __getattr__(attr: str) -> Any:
-    """Convenience accessor — resolve token or radius key as a module attribute."""
+    """Resolve token or radius key as a module attribute.
+
+    Lookup is case-insensitive so legacy callers using uppercase
+    constants (``theme.ACCENT``) keep working alongside the lowercase
+    token keys actually stored in the JSON.
+    """
+    key = attr.lower()
     t = tokens()
+    if key in t:
+        return t[key]
     if attr in t:
         return t[attr]
     r = radii()
+    if key in r:
+        return r[key]
     if attr in r:
         return r[attr]
     raise AttributeError(attr)

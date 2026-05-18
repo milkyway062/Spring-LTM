@@ -33,6 +33,7 @@ from macro_gui import (
 from macro_gui import theme
 from macro_gui.pages import run as run_page, settings as settings_page
 from macro_gui.pages import log as log_page, update as update_page
+from macro_gui.pages import game as game_page
 from core.runner import Runner
 
 _CONFIG_PATH = os.path.join(_HERE, "config.json")
@@ -199,6 +200,7 @@ if __name__ == "__main__":
         version=VERSION,
         accent=theme.ACCENT,
         pages=(
+            PageSpec("game",     "GAME",     "game",     game_page.build),
             PageSpec("run",      "RUN",      "run",      run_page.build),
             PageSpec("settings", "SETTINGS", "settings", settings_page.build),
             PageSpec("log",      "LOG",      "log",      log_page.build),

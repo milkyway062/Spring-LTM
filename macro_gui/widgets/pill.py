@@ -1,4 +1,7 @@
-"""Pills: version badge, hotkey badge, status indicator."""
+"""Pill badge — version, hotkey, status. Subclasses QLabel so QSS
+background/border render natively without a wrapper (see
+``pyside6-patterns §2``).
+"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -12,7 +15,7 @@ _KIND_TO_OBJ: dict[str, str] = {
 
 
 class Pill(QLabel):
-    """Compact badge.  Extends QLabel so QSS background/border render natively.
+    """Compact pill badge.
 
     Args:
         text: Display text.
@@ -20,8 +23,12 @@ class Pill(QLabel):
         parent: Optional parent widget.
     """
 
-    def __init__(self, text: str, kind: str = "hotkey",
-                 parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        text: str,
+        kind: str = "hotkey",
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(text, parent)
         self.setObjectName(_KIND_TO_OBJ.get(kind, "PillHotkey"))
         self.setAlignment(Qt.AlignCenter)
